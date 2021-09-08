@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,12 @@ type DB struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+}
+
+type Query struct {
+	query  string
+	filter interface{}
+	opts   *options.FindOptions
 }
 
 func GetDB(cfg map[string]string) (queries.DbInterface, error) {
@@ -56,14 +63,13 @@ func GetDB(cfg map[string]string) (queries.DbInterface, error) {
 	return db, nil
 }
 
-func (db *DB) disconnect() {
-	db.client.Disconnect(db.ctx)
+func (db *DB) Disconnect() (err error) {
+	err = db.client.Disconnect(db.ctx)
 	db.cancel()
+	return
 }
 
-func (db *DB) Populate(data []queries.Entry) error {
-	defer db.disconnect()
-
+func (db *DB) Populate(data []interface{}) error {
 	for _, dat := range data {
 		fmt.Printf("ADD %#v\n", dat)
 		res, err := db.collection.InsertOne(db.ctx, dat)
@@ -75,80 +81,143 @@ func (db *DB) Populate(data []queries.Entry) error {
 	return nil
 }
 
-func (db *DB) GetAll() error {
-	return db.query(bson.D{})
-}
-
-func (db *DB) ToQuery(mq *queries.MidQuery) (interface{}, error) {
-	filters := []string{}
-	// sort map keys for testing consistency
-	keys := mq.SortedKeys()
-
-	for _, key := range keys {
-		val := mq.Filter[key]
-		switch v := val.(type) {
-		case string:
-			filters = append(filters, fmt.Sprintf("%q: %q", key, v))
-		case []interface{}:
-			f := fmt.Sprintf("%q: { %q: [ %q", key, "$in", v[0])
-			for _, n := range v[1:] {
-				f += fmt.Sprintf(", %q", n)
-			}
-			f += " ] }"
-			filters = append(filters, f)
-		default:
-			return fmt.Sprintf("ERR %#v", val), nil
-		}
-	}
-	return fmt.Sprintf("{ %s }", strings.Join(filters, ", ")), nil
-}
-
-func (db *DB) RunQuery(q interface{}) (interface{}, error) {
-	var filter interface{}
-	txt, ok := q.(string)
+func (db *DB) RunQuery(q interface{}, token string) ([]interface{}, string, error) {
+	query, ok := q.(*Query)
 	if !ok {
-		return nil, errors.Errorf("Unexpected query type %s; expected string", reflect.TypeOf(q).String())
+		return nil, "", errors.Errorf("Unexpected query type %s", reflect.TypeOf(query).String())
 	}
-	err := bson.UnmarshalExtJSON([]byte(txt), false, &filter)
-	//err := json.Unmarshal([]byte(txt), &filter)
+	//fmt.Printf("Query %#v\n", query.filter)
+	skip, err := query.setSkip(token)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	fmt.Printf("Query %#v\n", filter)
-	return nil, db.query(filter)
+	return db.query(query, skip)
 }
 
-func (db *DB) query(filter interface{}) error {
-	cur, err := db.collection.Find(db.ctx, filter)
+func (db *DB) query(query *Query, skip int) ([]interface{}, string, error) {
+	cur, err := db.collection.Find(db.ctx, query.filter, []*options.FindOptions{query.opts}...)
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 	defer cur.Close(db.ctx)
-
+	ret := []interface{}{}
 	for cur.Next(db.ctx) {
-		//var result bson.D
-		var result queries.Entry
+		var result bson.M
 		if err := cur.Decode(&result); err != nil {
-			return err
+			return nil, "", err
 		}
-		fmt.Printf("%#v\n", result)
+		ret = append(ret, result)
 	}
 	if err := cur.Err(); err != nil {
+		return nil, "", err
+	}
+	var token string
+	if query.opts.Limit != nil && *query.opts.Limit != 0 {
+		token = strconv.Itoa(skip + len(ret))
+	}
+	return ret, token, nil
+}
+
+func (query *Query) VisitEQ(f *queries.FilterEQ) (string, error) {
+	// { <key>: <val> }
+	return fmt.Sprintf("{ %q: %q }", f.Key, f.Val), nil
+}
+
+func (query *Query) VisitIN(f *queries.FilterIN) (string, error) {
+	// { $in: [ <val1>, <val2>, ... , <valN> ] }
+	if len(f.Vals) == 0 {
+		return "", fmt.Errorf("empty IN operator for key %q", f.Key)
+	}
+	str := fmt.Sprintf(`{ %q: { "$in": [ %q`, f.Key, f.Vals[0])
+	for _, v := range f.Vals[1:] {
+		str += fmt.Sprintf(", %q", v)
+	}
+	str += " ] } }"
+	return str, nil
+}
+
+func (query *Query) visitFilters(op string, filters []queries.Filter) (string, error) {
+	arr := []string{}
+	for _, filter := range filters {
+		switch f := filter.(type) {
+		case *queries.FilterEQ:
+			if str, err := query.VisitEQ(f); err != nil {
+				return "", err
+			} else {
+				arr = append(arr, str)
+			}
+		case *queries.FilterIN:
+			if str, err := query.VisitIN(f); err != nil {
+				return "", err
+			} else {
+				arr = append(arr, str)
+			}
+		case *queries.FilterOR:
+			if str, err := query.VisitOR(f); err != nil {
+				return "", err
+			} else {
+				arr = append(arr, str)
+			}
+		case *queries.FilterAND:
+			if str, err := query.VisitAND(f); err != nil {
+				return "", err
+			} else {
+				arr = append(arr, str)
+			}
+		default:
+			return "", fmt.Errorf("Unsupported filter type %#v", f)
+		}
+	}
+	return fmt.Sprintf(`{ "%s": [ %s ] }`, op, strings.Join(arr, ", ")), nil
+}
+
+func (query *Query) VisitAND(f *queries.FilterAND) (string, error) {
+	// { $and: [ { <expression1> }, { <expression2> } , ... , { <expressionN> } ] }
+	return query.visitFilters("$and", f.Filters)
+}
+
+func (query *Query) VisitOR(f *queries.FilterOR) (string, error) {
+	// { $or: [ { <expression1> }, { <expression2> } , ... , { <expressionN> } ] }
+	return query.visitFilters("$or", f.Filters)
+}
+
+func (query *Query) Finalize(filters string, mq *queries.MidQuery) error {
+	query.query = filters
+	if len(filters) == 0 {
+		query.filter = bson.D{}
+	} else if err := bson.UnmarshalExtJSON([]byte(filters), false, &query.filter); err != nil {
+		return err
+	}
+	query.opts = options.Find()
+
+	// sorting
+	if len(mq.Sort) > 0 {
+		sort := bson.D{}
+		for _, s := range mq.Sort {
+			order := 1 // ascending
+			if s.Order == queries.DESC {
+				order = -1
+			}
+			sort = append(sort, bson.E{Key: s.Key, Value: order})
+		}
+		query.opts.SetSort(sort)
+	}
+	// pagination
+	if mq.Page.Limit > 0 {
+		query.opts.SetLimit(int64(mq.Page.Limit))
+	}
+	if _, err := query.setSkip(mq.Page.Token); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (db *DB) query1(filter interface{}) error {
-	var result queries.Entry
-	err := db.collection.FindOne(db.ctx, filter).Decode(&result)
-	if err == nil {
-		fmt.Printf("%#v\n", result)
-		return nil
+func (query *Query) setSkip(token string) (skip int, err error) {
+	if len(token) != 0 {
+		if skip, err = strconv.Atoi(token); err != nil {
+			return
+		}
+		query.opts.SetSkip(int64(skip))
 	}
-	if err == mongo.ErrNoDocuments {
-		fmt.Println("record does not exist")
-		return nil
-	}
-	return err
+	return
 }

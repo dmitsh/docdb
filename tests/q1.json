@@ -1,6 +1,6 @@
 
 {
-    "filter": {
-        "state": "CA"
+    "pagination": {
+        "limit": 2
     }
 }

@@ -1,6 +1,8 @@
 package mongodb
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/dmitsh/docdb/pkg/queries"
@@ -13,33 +15,33 @@ func TestMongoQuery(t *testing.T) {
 		query string
 	}{
 		{
-			input: `
-			{
-				"filter": {
-					"state": "CA"
-				}
-			}			
-			`,
+			input: "../../tests/q1.json",
+			query: ``,
+		},
+		{
+			input: "../../tests/q2.json",
 			query: `{ "state": "CA" }`,
 		},
 		{
-			input: `
-			{
-				"filter": {
-					"state": ["CA", "WA"],
-					"person.org" : "Dev Ops"
-				}
-			}
-			`,
-			query: `{ "person.org": "Dev Ops", "state": { "$in": [ "CA", "WA" ] } }`,
+			input: "../../tests/q3.json",
+			query: `{ "$and": [ { "person.org": "A" }, { "state": { "$in": [ "CA", "WA" ] } } ] }`,
+		},
+		{
+			input: "../../tests/q4.json",
+			query: `{ "$or": [ { "person.org": "A" }, { "$and": [ { "person.org": "B" }, { "state": { "$in": [ "CA", "WA" ] } } ] } ] }`,
 		},
 	}
-	db := DB{}
 	for _, test := range tests {
-		mq, err := queries.CreateQuery(test.input)
+		data, err := os.ReadFile(test.input)
 		assert.NoError(t, err)
-		query, err := db.ToQuery(mq)
+		var mq queries.MidQuery
+		err = json.Unmarshal(data, &mq)
 		assert.NoError(t, err)
-		assert.Equal(t, test.query, query)
+
+		query := &Query{}
+		qbuilder := queries.NewQueryBuilder(query)
+		err = qbuilder.BuildQuery(&mq)
+		assert.NoError(t, err)
+		assert.Equal(t, test.query, query.query)
 	}
 }

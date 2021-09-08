@@ -2,91 +2,91 @@
 	{
 	  "person": {
 		"name": "Peter",
-		"Org": "A",
-		"Code": 1001
+		"org": "A",
+		"code": 1001
 	  },
-	  "City": "Seattle",
-	  "State": "WA"
+	  "city": "Seattle",
+	  "state": "WA"
 	},
 	{
 	  "person": {
 		"name": "Kate",
-		"Org": "B",
-		"Code": 1002
+		"org": "B",
+		"code": 1002
 	  },
-	  "City": "Portland",
-	  "State": "OR"
+	  "city": "Portland",
+	  "state": "OR"
 	},
 	{
 	  "person": {
 		"name": "Nataly",
-		"Org": "C",
-		"Code": 1003
+		"org": "C",
+		"code": 1003
 	  },
-	  "City": "Sacramento",
-	  "State": "CA"
+	  "city": "Sacramento",
+	  "state": "CA"
 	},
 	{
 	  "person": {
 		"name": "John",
-		"Org": "A",
-		"Code": 1004
+		"org": "A",
+		"code": 1004
 	  },
-	  "City": "Spokane",
-	  "State": "WA"
+	  "city": "Spokane",
+	  "state": "WA"
 	},
 	{
 	  "person": {
 		"name": "Nick",
-		"Org": "B",
-		"Code": 1005
+		"org": "B",
+		"code": 1005
 	  },
-	  "City": "Los Angeles",
-	  "State": "CA"
+	  "city": "Los Angeles",
+	  "state": "CA"
 	},
 	{
 	  "person": {
 		"name": "Jeniffer",
-		"Org": "C",
-		"Code": 1006
+		"org": "C",
+		"code": 1006
 	  },
-	  "City": "Eugene",
-	  "State": "OR"
+	  "city": "Eugene",
+	  "state": "OR"
 	},
 	{
 	  "person": {
 		"name": "Mike",
-		"Org": "A",
-		"Code": 1007
+		"org": "A",
+		"code": 1007
 	  },
-	  "City": "San Francisco",
-	  "State": "CA"
+	  "city": "San Francisco",
+	  "state": "CA"
 	},
 	{
 	  "person": {
 		"name": "Leo",
-		"Org": "B",
-		"Code": 1008
+		"org": "B",
+		"code": 1008
 	  },
-	  "City": "Redmond",
-	  "State": "WA"
+	  "city": "Redmond",
+	  "state": "WA"
 	},
 	{
 	  "person": {
 		"name": "Dave",
-		"Org": "C",
-		"Code": 1009
+		"org": "C",
+		"code": 1009
 	  },
-	  "City": "San Diego",
-	  "State": "CA"
+	  "city": "San Diego",
+	  "state": "CA"
 	},
 	{
 	  "person": {
 		"name": "Ann",
-		"Org": "A",
-		"Code": 1010
+		"org": "A",
+		"code": 1010
 	  },
-	  "City": "New York",
-	  "State": "NY"
+	  "city": "New York",
+	  "state": "NY"
 	}
 ]

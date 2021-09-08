@@ -12,71 +12,70 @@ import (
 	"github.com/pkg/errors"
 )
 
+type Person struct {
+	Name string `json:"name,omitempty"`
+	Org  string `json:"org,omitempty"`
+	Code int    `json:"code,omitempty"`
+}
+
+type Entry struct {
+	Person Person `json:"person,omitempty"`
+	City   string `json:"city,omitempty"`
+	State  string `json:"state,omitempty"`
+}
+
 func main() {
+	if err := run(); err != nil {
+		fmt.Println("ERROR:", err.Error())
+		os.Exit(1)
+	}
+	fmt.Println("OK")
+}
+
+func run() error {
 	var (
 		cfile, ifile, qfile string
-		getall              bool
 		db                  queries.DbInterface
-		err                 error
+		visitor             queries.Visitor
 	)
 	flag.StringVar(&cfile, "c", "", "DB config filepath")
 	flag.StringVar(&ifile, "i", "", "input data filepath")
-	flag.BoolVar(&getall, "a", false, "get all data")
 	flag.StringVar(&qfile, "q", "", "query filepath")
 	flag.Parse()
 
 	// read config
 	config, err := getConfig(cfile)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
+		return err
 	}
 
 	switch config["type"] {
 	case "cosmosdb":
+		visitor = &cosmosdb.Query{}
 		db, err = cosmosdb.GetDB(config)
 	case "mongodb":
+		visitor = &mongodb.Query{}
 		db, err = mongodb.GetDB(config)
 	default:
 		err = errors.Errorf("Unsupported DB type %q", config["type"])
 	}
 	if err != nil {
-		fmt.Println("ERROR:", err.Error())
-		os.Exit(1)
+		return err
 	}
+	defer db.Disconnect()
 
 	switch {
 	case len(ifile) != 0:
 		data, err := getData(ifile)
 		if err != nil {
-			break
+			return err
 		}
-		err = db.Populate(data)
-
-	case getall:
-		err = db.GetAll()
+		return db.Populate(data)
 
 	case len(qfile) != 0:
-		txt, err := os.ReadFile(qfile)
-		if err != nil {
-			break
-		}
-		mq, err := queries.CreateQuery(string(txt))
-		if err != nil {
-			break
-		}
-		q, err := db.ToQuery(mq)
-		if err != nil {
-			break
-		}
-		_, err = db.RunQuery(q)
+		return processQuery(qfile, db, visitor)
 	}
-
-	if err != nil {
-		fmt.Println("ERROR:", err.Error())
-	} else {
-		fmt.Println("OK")
-	}
+	return nil
 }
 
 func getConfig(fname string) (map[string]string, error) {
@@ -92,12 +91,63 @@ func getConfig(fname string) (map[string]string, error) {
 	return config, err
 }
 
-func getData(fname string) ([]queries.Entry, error) {
+func getData(fname string) ([]interface{}, error) {
 	content, err := os.ReadFile(fname)
 	if err != nil {
 		return nil, err
 	}
-	data := []queries.Entry{}
+	data := []interface{}{}
 	err = json.Unmarshal(content, &data)
 	return data, err
+}
+
+func processQuery(fname string, db queries.DbInterface, visitor queries.Visitor) error {
+	data, err := os.ReadFile(fname)
+	if err != nil {
+		return err
+	}
+	var mq queries.MidQuery
+	if err = json.Unmarshal(data, &mq); err != nil {
+		return err
+	}
+	//
+	qbuilder := queries.NewQueryBuilder(visitor)
+	err = qbuilder.BuildQuery(&mq)
+
+	if err != nil {
+		return err
+	}
+	var (
+		ret   []interface{}
+		token string
+	)
+	for {
+		fmt.Println("RUN QUERY")
+		ret, token, err = db.RunQuery(visitor, token)
+		if err != nil {
+			return errors.Wrap(err, "processQuery")
+		}
+		for _, item := range ret {
+			printItem(item)
+		}
+		if len(ret) == 0 || len(token) == 0 {
+			fmt.Println("EOF")
+			break
+		}
+	}
+	return nil
+}
+
+func printItem(data interface{}) {
+	jdata, err := json.Marshal(data)
+	if err != nil {
+		fmt.Printf("Parsing error %v\n", err)
+		return
+	}
+	var obj Entry
+	if err = json.Unmarshal(jdata, &obj); err != nil {
+		fmt.Println(string(jdata))
+	} else {
+		fmt.Printf("%#v\n", obj)
+	}
 }

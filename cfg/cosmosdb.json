@@ -1,0 +1,7 @@
+{
+	"type": "cosmosdb",
+	"url": "https://<NAME>.documents.azure.com:443/",
+	"key": "<KEY>",
+	"db": "<DB>",
+	"container": "<COL>"
+}

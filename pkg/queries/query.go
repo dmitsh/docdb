@@ -2,49 +2,83 @@ package queries
 
 import (
 	"encoding/json"
-	"sort"
-
-	"github.com/pkg/errors"
+	"fmt"
 )
+
+type SortingOrder int
 
 const (
 	FILTER = "filter"
-	OR     = "$or"
+	SORT   = "sort"
+	PAGE   = "pagination"
+	ASC    = "ASC"
+	DESC   = "DESC"
 )
 
 type DbInterface interface {
-	Populate([]Entry) error
-	GetAll() error
-	ToQuery(*MidQuery) (interface{}, error)
-	RunQuery(interface{}) (interface{}, error)
+	Populate([]interface{}) error
+	RunQuery(interface{}, string) ([]interface{}, string, error)
+	Disconnect() error
+}
+
+type Sorting struct {
+	Key   string `json:"key"`
+	Order string `json:"order,omitempty"`
+}
+
+type Pagination struct {
+	Limit int    `json:"limit"`
+	Token string `json:"token,omitempty"`
 }
 
 type MidQuery struct {
-	Filter map[string]interface{}
+	Filters map[string]interface{} `json:"filter"`
+	Sort    []Sorting              `json:"sort"`
+	Page    Pagination             `json:"page"`
+
+	// derived from Filters
+	Filter Filter
 }
 
-func CreateQuery(txt string) (*MidQuery, error) {
-	m := make(map[string]interface{})
-	if err := json.Unmarshal([]byte(txt), &m); err != nil {
-		return nil, errors.Wrap(err, "Error parsing query")
+func (q *MidQuery) UnmarshalJSON(data []byte) error {
+	var m map[string]interface{}
+	err := json.Unmarshal(data, &m)
+	if err != nil {
+		return err
 	}
-	query := &MidQuery{}
-	if filter, ok := m[FILTER]; ok {
-		query.Filter, ok = filter.(map[string]interface{})
-		if !ok {
-			return nil, errors.Errorf("'%s' must be a map", FILTER)
+	if elem, ok := m[FILTER]; ok {
+		q.Filter, err = parseFilter(elem)
+		if err != nil {
+			return err
 		}
 	}
-	return query, nil
-}
-
-func (mq *MidQuery) SortedKeys() []string {
-	keys := make([]string, len(mq.Filter))
-	i := 0
-	for key := range mq.Filter {
-		keys[i] = key
-		i++
+	// setting sorting
+	if elem, ok := m[SORT]; ok {
+		arr, ok := elem.([]interface{})
+		if !ok {
+			return fmt.Errorf("%q must be an array", SORT)
+		}
+		jdata, err := json.Marshal(arr)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(jdata, &q.Sort); err != nil {
+			return err
+		}
 	}
-	sort.Strings(keys)
-	return keys
+	// setting pagination
+	if elem, ok := m[PAGE]; ok {
+		page, ok := elem.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("%q must be a map", PAGE)
+		}
+		jdata, err := json.Marshal(page)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(jdata, &q.Page); err != nil {
+			return err
+		}
+	}
+	return nil
 }

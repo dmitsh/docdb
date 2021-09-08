@@ -1,6 +1,11 @@
+
 {
     "filter": {
-        "state": ["CA", "WA"],
-        "person.org" : "A"
+        "EQ": {
+            "state": "CA"
+        }
+    },
+    "pagination": {
+        "limit": 2
     }
 }

@@ -1,0 +1,6 @@
+{
+	"type": "mongodb",
+	"url": "mongodb://localhost:27017",
+	"db": "db1",
+	"collection": "c1"
+}
